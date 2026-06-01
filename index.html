@@ -1234,6 +1234,46 @@
     /* ── PROFILE DEBT GRID ──────────────────────────────────────────── */
     .debt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     @media (max-width: 600px) { .debt-grid { grid-template-columns: 1fr; } }
+
+    /* ── MOBILE PROFILE SHEET ───────────────────────────────────────── */
+    .mobile-sheet-scrim {
+      position: fixed; inset: 0;
+      z-index: 350;
+      background: rgba(0,0,0,0.45);
+      animation: fadeIn 0.18s ease;
+    }
+    .mobile-sheet {
+      position: fixed;
+      bottom: calc(64px + env(safe-area-inset-bottom));
+      left: 12px; right: 12px;
+      background: rgba(14,14,14,0.98);
+      backdrop-filter: blur(24px) saturate(1.6);
+      border: 1px solid var(--border-strong);
+      border-radius: 18px;
+      z-index: 360;
+      overflow: hidden;
+      animation: scaleIn 0.2s ease;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.75);
+    }
+    .mobile-sheet-header {
+      padding: 16px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .mobile-sheet-item {
+      display: flex; align-items: center; gap: 13px;
+      padding: 15px 20px;
+      font-size: 15px; font-weight: 500;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      transition: background 0.15s;
+      color: var(--text);
+    }
+    .mobile-sheet-item:last-child { border-bottom: none; }
+    .mobile-sheet-item:active { background: rgba(255,255,255,0.07); }
+    .mobile-sheet-item svg { width: 18px; height: 18px; opacity: 0.7; flex-shrink: 0; }
+    .mobile-sheet-item.danger { color: var(--red); }
+    .mobile-sheet-item.danger svg { opacity: 1; }
   </style>
 </head>
 <body>
@@ -1417,7 +1457,7 @@
     return getMembers().find(m => m.id === id) || null;
   }
   function setCurrentUser(id) { localStorage.setItem('pool_current', id); }
-  function logout() { LS.rm('pool_current'); navigate('#login'); }
+  function logout() { localStorage.removeItem('pool_current'); navigate('#login'); }
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  HELPERS
@@ -1658,11 +1698,15 @@
         <i data-lucide="${n.icon}"></i>${n.label}
       </div>`).join('');
 
-    const bnavItems = NAV_ITEMS.slice(0,5).map(n => `
+    const bnavItems = NAV_ITEMS.slice(0,4).map(n => `
       <div class="bnav-item${base === n.hash ? ' active':''}" data-nav="${n.hash}">
         <i data-lucide="${n.icon}"></i>
         <span>${n.label}</span>
-      </div>`).join('');
+      </div>`).join('') + `
+      <div class="bnav-item${base === '#profile' ? ' active' : ''}" id="bnav-profile-btn">
+        <i data-lucide="user"></i>
+        <span>Profile</span>
+      </div>`;
 
     let content;
     if      (base === '#dashboard')      content = viewDashboard(user, isAdmin);
@@ -1981,18 +2025,18 @@
                   </div>
                 </div>
               </div>
-              ${canManage ? `
-                <div style="display:flex;gap:4px;flex-shrink:0;" onclick="event.stopPropagation()">
+              <div style="display:flex;gap:4px;flex-shrink:0;" onclick="event.stopPropagation()">
+                ${canManage ? `
                   <button class="eye-btn" data-edit-event="${ev.id}" title="Edit event">
                     <i data-lucide="pencil"></i>
-                  </button>
-                  <button class="eye-btn" data-del-event-list="${ev.id}" title="Delete event"
-                    style="color:rgba(229,62,62,0.5);"
-                    onmouseover="this.style.color='var(--red)'"
-                    onmouseout="this.style.color='rgba(229,62,62,0.5)'">
-                    <i data-lucide="trash-2"></i>
-                  </button>
-                </div>` : ''}
+                  </button>` : ''}
+                <button class="eye-btn" data-del-event-list="${ev.id}" title="Delete event"
+                  style="color:rgba(229,62,62,0.45);"
+                  onmouseover="this.style.color='var(--red)'"
+                  onmouseout="this.style.color='rgba(229,62,62,0.45)'">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
               <div class="event-chevron"><i data-lucide="chevron-right"></i></div>
             </div>`;
         }).join('');
@@ -2087,16 +2131,16 @@
             <h1 class="page-title">${ev.name}</h1>
             <div style="font-size:13px;color:var(--muted);margin-top:3px;">${fmtLongDate(ev.date)}</div>
           </div>
-          ${canManageEv ? `
-            <div style="display:flex;gap:8px;align-self:flex-start;margin-top:4px;">
+          <div style="display:flex;gap:8px;align-self:flex-start;margin-top:4px;">
+            ${canManageEv ? `
               <button class="btn btn-ghost btn-sm" data-edit-event="${ev.id}">
                 <i data-lucide="pencil"></i>Edit
-              </button>
-              <button class="btn btn-ghost btn-sm" data-del-event-detail="${ev.id}"
-                style="color:rgba(229,62,62,0.7);">
-                <i data-lucide="trash-2"></i>Delete
-              </button>
-            </div>` : ''}
+              </button>` : ''}
+            <button class="btn btn-ghost btn-sm" data-del-event-detail="${ev.id}"
+              style="color:rgba(229,62,62,0.7);">
+              <i data-lucide="trash-2"></i>Delete
+            </button>
+          </div>
         </div>
 
         ${flashHTML}
@@ -2817,8 +2861,49 @@
       el.addEventListener('click', () => navigate(el.dataset.nav));
     });
 
-    // Logout
+    // Logout (desktop sidebar)
     document.getElementById('logout-btn')?.addEventListener('click', logout);
+
+    // Mobile profile sheet
+    document.getElementById('bnav-profile-btn')?.addEventListener('click', () => {
+      // Remove any existing sheet
+      document.getElementById('mobile-sheet-scrim')?.remove();
+      document.getElementById('mobile-sheet')?.remove();
+
+      const fresh = getMembers().find(m => m.id === getCurrentUser()?.id) || getCurrentUser();
+      if (!fresh) return;
+
+      const scrim = document.createElement('div');
+      scrim.id = 'mobile-sheet-scrim';
+      scrim.className = 'mobile-sheet-scrim';
+
+      const sheet = document.createElement('div');
+      sheet.id = 'mobile-sheet';
+      sheet.className = 'mobile-sheet';
+      sheet.innerHTML = `
+        <div class="mobile-sheet-header">
+          <div class="avatar sm">${initials(fresh.name)}</div>
+          <div>
+            <div style="font-size:14px;font-weight:600;">${fresh.name}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px;">${getTier(fresh).emoji} ${getTier(fresh).label}</div>
+          </div>
+        </div>
+        <div class="mobile-sheet-item" id="sheet-profile">
+          <i data-lucide="user"></i>My Profile
+        </div>
+        <div class="mobile-sheet-item danger" id="sheet-logout">
+          <i data-lucide="log-out"></i>Log Out
+        </div>`;
+
+      document.body.appendChild(scrim);
+      document.body.appendChild(sheet);
+      lucide && lucide.createIcons({ el: sheet });
+
+      const dismiss = () => { scrim.remove(); sheet.remove(); };
+      scrim.addEventListener('click', dismiss);
+      document.getElementById('sheet-profile').addEventListener('click', () => { dismiss(); navigate('#profile'); });
+      document.getElementById('sheet-logout').addEventListener('click', () => { dismiss(); logout(); });
+    });
 
     // Leaderboard rows → member profile
     document.querySelectorAll('[data-member-nav]').forEach(el => {
@@ -2886,8 +2971,8 @@
           const eid = btn.dataset.delEventList;
           const ev  = getEvents().find(ev => ev.id === eid);
           if (!ev) return;
-          if (!confirm(`Delete "${ev.name}"? This will remove all its purchases and cannot be undone.`)) return;
-          saveEvents(getEvents().filter(ev => ev.id !== eid));
+          if (!confirm(`Delete ${ev.name} and all its purchases?`)) return;
+          saveEvents(getEvents().filter(e => e.id !== eid));
           recalcBalances(); render();
         });
       });
@@ -2929,8 +3014,8 @@
           const eid = btn.dataset.delEventDetail;
           const ev  = getEvents().find(ev => ev.id === eid);
           if (!ev) return;
-          if (!confirm(`Delete "${ev.name}"? This removes all purchases and cannot be undone.`)) return;
-          saveEvents(getEvents().filter(ev => ev.id !== eid));
+          if (!confirm(`Delete ${ev.name} and all its purchases?`)) return;
+          saveEvents(getEvents().filter(e => e.id !== eid));
           recalcBalances(); navigate('#events');
         });
       });
