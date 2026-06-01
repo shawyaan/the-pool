@@ -1626,7 +1626,6 @@
   // ═══════════════════════════════════════════════════════════════════════════
   let _lastRoast      = null;  // cache roast so it doesn't change on toggle re-render
   let _prevRoute      = null;  // track previous route for state cleanup
-  let _eventModalOpen = false; // add-event modal visibility
   let _lpSelected     = new Set(); // log-purchase: selected present member IDs
   let _lpImage        = null;  // log-purchase: receipt photo base64
   let _lpEventId      = null;  // log-purchase: tracks which event (for reset detection)
@@ -1660,7 +1659,7 @@
 
     // State cleanup when navigating away from certain views
     if (_prevRoute !== null && _prevRoute !== route) {
-      if (_prevRoute === '#events')       { _eventModalOpen = false; _eventEditId = null; }
+      if (_prevRoute === '#events')       { closeEventModal(); }
       if (_prevRoute === '#log-purchase') { _lpSelected = new Set(); _lpImage = null; _lpEventId = null; }
     }
     _prevRoute = route;
@@ -1956,42 +1955,7 @@
       return b.date.localeCompare(a.date);
     });
 
-    // ── Modal (create or edit) ───────────────────────────────────────────────
-    let modalHTML = '';
-    if (_eventModalOpen) {
-      const editing = _eventEditId ? sorted.find(e => e.id === _eventEditId) : null;
-      modalHTML = `
-        <div class="modal-overlay" id="event-modal-overlay">
-          <div class="modal-card">
-            <button class="modal-close" id="modal-close-btn"><i data-lucide="x"></i></button>
-            <div class="modal-title">${editing ? 'Edit Event' : 'New Event'}</div>
-            <form id="add-event-form" autocomplete="off">
-              <div class="form-group">
-                <label class="form-label">Event Name</label>
-                <input class="form-input" type="text" id="ev-name"
-                  placeholder="4th of July Kickback" required
-                  value="${editing ? editing.name.replace(/"/g,'&quot;') : ''}">
-              </div>
-              <div class="form-group">
-                <label class="form-label">Date</label>
-                <input class="form-input" type="date" id="ev-date" required
-                  value="${editing ? editing.date : ''}">
-              </div>
-              <div class="form-group" style="margin-bottom:24px;">
-                <label class="form-label">Description
-                  <span style="opacity:.5;font-size:10px;text-transform:none;letter-spacing:0;">(optional)</span>
-                </label>
-                <textarea class="form-textarea" id="ev-desc"
-                  placeholder="Where, what's the vibe…">${editing ? (editing.description || '') : ''}</textarea>
-              </div>
-              <button type="submit" class="btn btn-primary btn-full">
-                <i data-lucide="${editing ? 'save' : 'calendar-plus'}"></i>
-                ${editing ? 'Save Changes' : 'Create Event'}
-              </button>
-            </form>
-          </div>
-        </div>`;
-    }
+    // Modal is rendered via showEventModal() into <body> — not here.
 
     // ── Event list ───────────────────────────────────────────────────────────
     const listHTML = sorted.length === 0
@@ -2043,7 +2007,6 @@
 
     return `
       <div class="page-anim">
-        ${modalHTML}
         <div class="page-header">
           <h1 class="page-title">Events</h1>
           <button class="btn btn-primary btn-sm" id="add-event-btn">
@@ -2828,6 +2791,92 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  EVENT MODAL  (lives in <body>, immune to render() re-renders)
+  // ═══════════════════════════════════════════════════════════════════════════
+  function showEventModal(editId) {
+    closeEventModal(); // always clean up first
+    _eventEditId = editId || null;
+
+    const events  = getEvents();
+    const editing = _eventEditId ? events.find(e => e.id === _eventEditId) : null;
+
+    const overlay = document.createElement('div');
+    overlay.id    = 'event-modal-overlay';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <button class="modal-close" id="ev-modal-close"><i data-lucide="x"></i></button>
+        <div class="modal-title">${editing ? 'Edit Event' : 'New Event'}</div>
+        <form id="add-event-form" autocomplete="off">
+          <div class="form-group">
+            <label class="form-label">Event Name</label>
+            <input class="form-input" type="text" id="ev-name"
+              placeholder="4th of July Kickback" required
+              value="${editing ? editing.name.replace(/"/g, '&quot;') : ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date</label>
+            <input class="form-input" type="date" id="ev-date" required
+              value="${editing ? editing.date : ''}">
+          </div>
+          <div class="form-group" style="margin-bottom:20px;">
+            <label class="form-label">Description
+              <span style="opacity:.5;font-size:10px;text-transform:none;letter-spacing:0;">(optional)</span>
+            </label>
+            <textarea class="form-textarea" id="ev-desc"
+              placeholder="Where, what's the vibe…">${editing ? (editing.description || '') : ''}</textarea>
+          </div>
+          <div id="ev-error" style="display:none;color:var(--red);font-size:13px;
+            background:var(--red-dim);border:1px solid var(--red-border);border-radius:8px;
+            padding:10px 14px;margin-bottom:14px;"></div>
+          <button type="submit" class="btn btn-primary btn-full">
+            <i data-lucide="${editing ? 'save' : 'calendar-plus'}"></i>
+            ${editing ? 'Save Changes' : 'Create Event'}
+          </button>
+        </form>
+      </div>`;
+
+    document.body.appendChild(overlay);
+    lucide && lucide.createIcons({ el: overlay });
+    setTimeout(() => document.getElementById('ev-name')?.focus(), 60);
+
+    // Backdrop dismiss
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeEventModal(); });
+
+    // Close button
+    document.getElementById('ev-modal-close').addEventListener('click', closeEventModal);
+
+    // Form submit — this listener lives on the modal element, not in #app,
+    // so Firebase onValue re-renders never destroy it
+    document.getElementById('add-event-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const name  = document.getElementById('ev-name').value.trim();
+      const date  = document.getElementById('ev-date').value;
+      const desc  = document.getElementById('ev-desc').value.trim();
+      const errEl = document.getElementById('ev-error');
+      if (!name) { errEl.textContent = 'Please enter an event name.'; errEl.style.display = 'block'; return; }
+      if (!date) { errEl.textContent = 'Please pick a date.';         errEl.style.display = 'block'; return; }
+
+      const evs = getEvents();
+      if (_eventEditId) {
+        const ev = evs.find(ev => ev.id === _eventEditId);
+        if (ev) { ev.name = name; ev.date = date; ev.description = desc; }
+      } else {
+        const u = getCurrentUser();
+        evs.push({ id: uid(), name, date, description: desc, purchases: [], creatorId: u?.id });
+      }
+      saveEvents(evs);
+      closeEventModal();
+      render(); // immediate re-render for responsiveness; Firebase onValue will also re-render
+    });
+  }
+
+  function closeEventModal() {
+    document.getElementById('event-modal-overlay')?.remove();
+    _eventEditId = null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  TOAST
   // ═══════════════════════════════════════════════════════════════════════════
   let _toastTimer = null;
@@ -2930,38 +2979,13 @@
     // ── Events ──────────────────────────────────────────────────────────────
     if (route === '#events') {
       document.getElementById('add-event-btn')?.addEventListener('click', () => {
-        _eventEditId = null; _eventModalOpen = true; render();
-      });
-      document.getElementById('modal-close-btn')?.addEventListener('click', () => {
-        _eventModalOpen = false; _eventEditId = null; render();
-      });
-      document.getElementById('event-modal-overlay')?.addEventListener('click', e => {
-        if (e.target.id === 'event-modal-overlay') { _eventModalOpen = false; _eventEditId = null; render(); }
-      });
-      document.getElementById('add-event-form')?.addEventListener('submit', e => {
-        e.preventDefault();
-        const name = document.getElementById('ev-name').value.trim();
-        const date = document.getElementById('ev-date').value;
-        const desc = document.getElementById('ev-desc').value.trim();
-        if (!name || !date) return;
-        const evs = getEvents();
-        if (_eventEditId) {
-          // Edit existing
-          const ev = evs.find(ev => ev.id === _eventEditId);
-          if (ev) { ev.name = name; ev.date = date; ev.description = desc; }
-        } else {
-          // Create new
-          evs.push({ id: uid(), name, date, description: desc, purchases: [], creatorId: user.id });
-        }
-        saveEvents(evs);
-        _eventModalOpen = false; _eventEditId = null;
-        render();
+        showEventModal(null);
       });
       // Edit button on event card
       document.querySelectorAll('[data-edit-event]').forEach(btn => {
         btn.addEventListener('click', e => {
           e.stopPropagation();
-          _eventEditId = btn.dataset.editEvent; _eventModalOpen = true; render();
+          showEventModal(btn.dataset.editEvent);
         });
       });
       // Delete event from list
@@ -2999,12 +3023,11 @@
           }
         });
       });
-      // Edit event from detail page → goes to events list with modal open
+      // Edit event from detail page — opens modal in place, no navigation needed
       document.querySelectorAll('[data-edit-event]').forEach(btn => {
         btn.addEventListener('click', e => {
           e.stopPropagation();
-          _eventEditId = btn.dataset.editEvent; _eventModalOpen = true;
-          navigate('#events');
+          showEventModal(btn.dataset.editEvent);
         });
       });
       // Delete event from detail page
